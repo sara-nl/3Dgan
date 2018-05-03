@@ -93,7 +93,7 @@ if __name__ == '__main__':
     )
 
 
-    d=h5py.File("/data/svalleco/Ele_v1_1_2.h5",'r')
+    d=h5py.File("/scratch/04653/damianp/eos/project/d/dshep/LCD/V1/EleEscan_1_1.h5",'r')
     e=d.get('target')
     X=np.array(d.get('ECAL'))
     y=(np.array(e[:,1]))
