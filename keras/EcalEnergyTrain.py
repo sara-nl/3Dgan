@@ -93,7 +93,7 @@ if __name__ == '__main__':
     )
 
 
-    d=h5py.File("/scratch/04653/damianp/eos/project/d/dshep/LCD/V1/EleEscan_1_1.h5",'r')
+    d=h5py.File("/scratch/04653/damianp/eos/project/d/dshep/LCD/V1/EleEscan/EleEscan_1_1.h5",'r')
     e=d.get('target')
     X=np.array(d.get('ECAL'))
     y=(np.array(e[:,1]))
@@ -113,11 +113,11 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.05, test_size=0.05)
 
     # tensorflow ordering
-    X_train =np.expand_dims(X_train, axis=-1)
+    X_train = np.expand_dims(X_train, axis=-1)
     X_test = np.expand_dims(X_test, axis=-1)
     print(X_train.shape)
-    X_train =np.moveaxis(X_train, -1, 1)
-    X_test = np.moveaxis(X_test, -1,1)
+    X_train = np.moveaxis(X_train, -1, 1)
+    X_test = np.moveaxis(X_test, -1, 1)
 
     y_train= y_train/100
     y_test=y_test/100

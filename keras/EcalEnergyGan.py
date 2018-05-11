@@ -13,15 +13,15 @@ from keras.layers.convolutional import (UpSampling3D, Conv3D, ZeroPadding3D,
 
 from keras.models import Model, Sequential
 
-#K.set_image_dim_ordering('channels_first')
+K.set_image_dim_ordering('th')
 
 def ecal_sum(image):
     sum = K.sum(image, axis=(2, 3, 4))
     return sum
-   
+
 
 def discriminator():
-
+    
     image = Input(shape=(1, 25, 25, 25))
 
     x = Conv3D(32, (5, 5,5), data_format='channels_first', padding='same')(image)
@@ -61,6 +61,7 @@ def discriminator():
     ecal = Lambda(lambda x: K.sum(x, axis=(2, 3, 4)))(image)
     Model(input=image, output=[fake, aux, ecal]).summary()
     return Model(input=image, output=[fake, aux, ecal])
+
 
 def generator(latent_size=1024, return_intermediate=False):
 
