@@ -83,9 +83,15 @@ def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 1
 
 # This functions loads data from a file and also does any pre processing
 def GetData2D(datafile, xscale =1, yscale = 100):
-    #get data for training                                                                                                                            
-    if hvd.rank()==0:
-        print ('Loading Data from .....', datafile)
+    #get data for training                                                                                         
+
+    try:
+        if hvd.rank()==0:
+            print ('Loading Data from .....', datafile)
+    except NameError as e:
+        print("Horovod not enabled")
+        print('Loading Data from .....', datafile)                                   
+    
     f=h5py.File(datafile,'r')
     Y=f.get('target')
     X=np.array(f.get('ECAL'))
@@ -434,5 +440,5 @@ if __name__ == '__main__':
     d=discriminator()
     g=generator(latent_size)
     
-    GanTrain2D(d, g, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, weightdir, mod=fitmod, nb_epochs=nb_epochs, batch_size=batch_size, gen_weight=8, aux_weight=0.2, ecal_weight=0.1, xscale = xscale, verbose)
+    GanTrain2D(d, g, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, weightdir, mod=fitmod, nb_epochs=nb_epochs, batch_size=batch_size, gen_weight=8, aux_weight=0.2, ecal_weight=0.1, xscale = xscale, verbose=verbose)
     
