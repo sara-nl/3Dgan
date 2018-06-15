@@ -22,6 +22,7 @@ import argparse
 import random
 import psutil
 import socket
+import time
 from keras.callbacks import CallbackList
 
 #import setGPU #if Caltech
@@ -82,29 +83,32 @@ def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 1
     return out
 
 # This functions loads data from a file and also does any pre processing
-def GetData2D(datafile, xscale =1, yscale = 100):
+def GetData(datafile, xscale =1, yscale = 100, dimensions = 3):
     #get data for training                                                                                         
-
-    try:
-        if hvd.rank()==0:
-            print ('Loading Data from .....', datafile)
-    except NameError as e:
-        print("Horovod not enabled")
-        print('Loading Data from .....', datafile)                                   
-    
+    if hvd.rank()==0:
+        print('Loading Data from .....', datafile)                              
     f=h5py.File(datafile,'r')
-    Y=f.get('target')
+    
     X=np.array(f.get('ECAL'))
+    
+    Y=f.get('target')
     Y=(np.array(Y[:,1]))
+
     X[X < 1e-6] = 0
     X = np.expand_dims(X, axis=-1)
     X = X.astype(np.float32)
-    # X = np.sum(X, axis=(1))
-    # X = xscale * X
+    if dimensions == 2:
+        X = np.sum(X, axis=(1))
+        X = xscale * X
     X = np.moveaxis(X, -1, 1)
+
+    Y = np.expand_dims(Y, axis=-1)
     Y = Y.astype(np.float32)
     Y = Y/yscale
+    Y = np.moveaxis(Y, -1, 1)
+
     ecal = np.sum(X, axis=(2, 3, 4))
+    
     return X, Y, ecal
 
 
@@ -134,7 +138,7 @@ def randomize(a, b, c):
     return shuffled_a, shuffled_b, shuffled_c
 
 
-def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, WeightsDir, mod=0, nb_epochs=30, batch_size=128, latent_size=200, gen_weight=6, aux_weight=0.2, ecal_weight=0.1, lr=0.001, rho=0.9, decay=0.0, g_weights='params_generator_epoch_', d_weights='params_generator_epoch_', xscale=1, verbose=True):
+def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, WeightsDir, mod=0, nb_epochs=30, batch_size=128, latent_size=128, gen_weight=6, aux_weight=0.2, ecal_weight=0.1, lr=0.001, rho=0.9, decay=0.0, g_weights='params_generator_epoch_', d_weights='params_generator_epoch_', xscale=1, verbose=True):
     start_init = time.time()
     # verbose = False
     if hvd.rank()==0:
@@ -165,17 +169,40 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
         output=[fake, aux, ecal],
         name='combined_model'
     )
+    
     combined.compile(
         #optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
         optimizer=opt,
         loss=['binary_crossentropy', 'mean_absolute_percentage_error', 'mean_absolute_percentage_error'],
         loss_weights=[gen_weight, aux_weight, ecal_weight]
     )
-    gcb = CallbackList(callbacks=[hvd.callbacks.BroadcastGlobalVariablesCallback(0), hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.)])
+
+    gcb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
    
-    dcb = CallbackList(callbacks=[hvd.callbacks.BroadcastGlobalVariablesCallback(0), hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.)])
-    
-    ccb = CallbackList(callbacks=[hvd.callbacks.BroadcastGlobalVariablesCallback(0), hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.)])
+    dcb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
+
+    ccb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
 
     gcb.set_model( generator )
     dcb.set_model( discriminator )
@@ -187,43 +214,30 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
 
     # Getting Data
     Trainfiles, Testfiles = DivideFiles(datapath, nEvents=nEvents, EventsperFile = EventsperFile, datasetnames=["ECAL"], Particles =["Ele"])
-    #shuffle them explicitly
-    # random.shuffle(Testfiles)
-    # random.shuffle(Trainfiles)
-    # Trainfiles = Trainfiles[0:1]
-    # Testfiles = Testfiles[0:1]
-    if verbose and hvd.rank()==0:
-        print(Trainfiles)
-        print(Testfiles)
-    
+
+    if hvd.rank()==0:
+        print("Train files: {0} \nTest files: {1}".format(Trainfiles, Testfiles))
     
     #Read test data into a single array
     for index, dtest in enumerate(Testfiles):
        if index == 0:
-           X_test, Y_test, ecal_test = GetData2D(dtest)
+           X_test, Y_test, ecal_test = GetData(dtest)
        else:
-           X_temp, Y_temp, ecal_temp = GetData2D(dtest)
+           X_temp, Y_temp, ecal_temp = GetData(dtest)
            X_test = np.concatenate((X_test, X_temp))
            Y_test = np.concatenate((Y_test, Y_temp))
            ecal_test = np.concatenate((ecal_test, ecal_temp))
     
     for index, dtrain in enumerate(Trainfiles):
         if index == 0:
-            X_train, Y_train, ecal_train = GetData2D(dtrain)
+            X_train, Y_train, ecal_train = GetData(dtrain)
         else:
-            X_temp, Y_temp, ecal_temp = GetData2D(dtrain)
+            X_temp, Y_temp, ecal_temp = GetData(dtrain)
             X_train = np.concatenate((X_train, X_temp))
             Y_train = np.concatenate((Y_train, Y_temp))
             ecal_train = np.concatenate((ecal_train, ecal_temp))
 
     print("On hostname {0} - After init using {1} memory".format(socket.gethostname(), psutil.Process(os.getpid()).memory_info()[0]))
-
-    # if hvd.rank()==0:
-    #     print('Test Data loaded of shapes:')
-    #     print(X_test.shape)
-    #     print(Y_test.shape)
-    #     print(Y_test[:10])
-    #     print('*************************************************************************************')
 
     nb_test = X_test.shape[0]
     assert X_train.shape[0] == EventsperFile * len(Trainfiles), "# Total events in training files"
@@ -235,8 +249,8 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
     train_history = defaultdict(list)
     test_history = defaultdict(list)
 
-    init_time = time.time()- start_init
-    print('Initialization time was {} seconds'.format(init_time))
+    if hvd.rank()==0:
+        print('Initialization time was {} seconds'.format(time.time() - start_init))
 
     for epoch in range(nb_epochs):
         epoch_start = time.time()
@@ -244,40 +258,25 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
             print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
         
         randomize(X_train, Y_train, ecal_train)
-        
-        if verbose and hvd.rank()==0:
-            progress_bar = Progbar(target=total_batches)
 
         epoch_gen_loss = []
         epoch_disc_loss = []
- 
-        if hvd.rank()==0:
-            print(total_batches)
         
         image_batches = genbatches(X_train, batch_size)
         energy_batches = genbatches(Y_train, batch_size)
         ecal_batches = genbatches(ecal_train, batch_size)
         
-        for index in range(total_batches):
-            if verbose and hvd.rank()==0:
-                progress_bar.update(index)
-            else:   
-                if (index % 1)==0 and hvd.rank()==0:
-                    print('processed {}/{} batches'.format(index + 1, total_batches))
 
+        for index in range(total_batches):
+            start = time.time()         
             image_batch = image_batches.next()
             energy_batch = energy_batches.next()
             ecal_batch = ecal_batches.next()
 
-            # print(image_batch.shape)
-            # print(ecal_batch.shape)
-            # print(global_batch_size)
-
             noise = np.random.normal(0, 1, (batch_size, latent_size))
             sampled_energies = np.random.uniform(0.1, 5,( batch_size, 1))
             generator_ip = np.multiply(sampled_energies, noise)
-      
-            #ecal sum from fit
+            # ecal sum from fit
             ecal_ip = GetEcalFit(sampled_energies, mod, xscale)
             generated_images = generator.predict(generator_ip, verbose=0)        
             real_batch_loss = discriminator.train_on_batch(image_batch, [BitFlip(np.ones(batch_size)), energy_batch, ecal_batch])
@@ -299,52 +298,13 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
             epoch_gen_loss.append([
                 (a + b) / 2 for a, b in zip(*gen_losses)
             ])
-        
-        # if hvd.rank()==0:
-        #     print('\nTesting for epoch {}:'.format(epoch + 1))
-        #noise = np.random.normal(0.1, 1, (nb_test, latent_size))
-        #sampled_energies = np.random.uniform(0.1, 5, (nb_test, 1))
-        #generator_ip = np.multiply(sampled_energies, noise)
-        #generated_images = generator.predict(generator_ip, verbose=False)
-        #ecal_ip = GetEcalFit(sampled_energies, mod, xscale)
-        #sampled_energies = np.squeeze(sampled_energies, axis=(1,))
-        #X = np.concatenate((X_test, generated_images))
-        #y = np.array([1] * nb_test + [0] * nb_test)
-        #ecal = np.concatenate((ecal_test, ecal_ip))
-        #aux_y = np.concatenate((Y_test, sampled_energies), axis=0)
-        #discriminator_test_loss = discriminator.evaluate(
-        #    X, [y, aux_y, ecal], verbose=False, batch_size=batch_size)
-        # discriminator_train_loss = np.mean(np.array(epoch_disc_loss), axis=0)
 
-        #noise = np.random.normal(0.1, 1, (2 * nb_test, latent_size))
-        #sampled_energies = np.random.uniform(0.1, 5, (2 * nb_test, 1))
-        #generator_ip = np.multiply(sampled_energies, noise)
-        #ecal_ip = GetEcalFit(sampled_energies, mod, xscale)
-        #trick = np.ones(2 * nb_test)
-        #generator_test_loss = combined.evaluate(generator_ip,
-        #                                        [trick, sampled_energies.reshape((-1, 1)), ecal_ip], verbose=False,batch_size=batch_size)
-        # generator_train_loss = np.mean(np.array(epoch_gen_loss), axis=0)
-        # train_history['generator'].append(generator_train_loss)
-        # train_history['discriminator'].append(discriminator_train_loss)
-        #test_history['generator'].append(generator_test_loss)
-        #test_history['discriminator'].append(discriminator_test_loss)
-
+            if (index % 1)==0 and hvd.rank()==0:
+                # progress_bar.update(index)
+                print('processed {}/{} batches in {}'.format(index + 1, total_batches, time.time() - start))
         
         # save weights every epoch
         if hvd.rank()==0:
-            # print('{0:<22s} | {1:4s} | {2:15s} | {3:5s}| {4:5s}'.format(
-            # 'component', *discriminator.metrics_names))
-            # print('-' * 65)
-
-            # ROW_FMT = '{0:<22s} | {1:<4.2f} | {2:<15.2f} | {3:<5.2f}| {4:<5.2f}'
-            # print(ROW_FMT.format('generator (train)',
-            #                     *train_history['generator'][-1]))
-            # #print(ROW_FMT.format('generator (test)',
-            # #                     *test_history['generator'][-1]))
-            # print(ROW_FMT.format('discriminator (train)',
-            #                     *train_history['discriminator'][-1]))
-            # #print(ROW_FMT.format('discriminator (test)',
-            # #                     *test_history['discriminator'][-1]))
 
             safe_mkdir(WeightsDir)
 
@@ -358,12 +318,13 @@ def GanTrain2D(discriminator, generator, opt, global_batch_size, warmup_epochs, 
             print("The {} epoch took {} seconds".format(epoch, epoch_time))
             # pickle.dump({'train': train_history, 'test': test_history}, open(WeightsDir + 'dcgan2D-history.pkl', 'wb'))
 
+
 def get_parser():
     parser = argparse.ArgumentParser(description='3D GAN Params' )
     parser.add_argument('--model', '-m', action='store', type=str, default='EcalEnergyGan', help='Model architecture to use.')
     parser.add_argument('--nbepochs', action='store', type=int, default=25, help='Number of epochs to train for.')
     parser.add_argument('--batchsize', action='store', type=int, default=126, help='batch size per update')
-    parser.add_argument('--latentsize', action='store', type=int, default=200, help='size of random N(0, 1) latent space to sample')
+    parser.add_argument('--latentsize', action='store', type=int, default=128, help='size of random N(0, 1) latent space to sample')
     parser.add_argument('--datapath', action='store', type=str, default='/eos/project/d/dshep/LCD/V1/*scan/*.h5', help='HDF5 files to train from.')
     parser.add_argument('--nbEvents', action='store', type=int, default=200000, help='Number of Data points to use')
     parser.add_argument('--nbperfile', action='store', type=int, default=10000, help='Number of events in a file.')
@@ -378,6 +339,7 @@ def get_parser():
     parser.add_argument('--interop', action='store', type=int, default=1, help='Sets config.inter_op_parallelism_threads')
     parser.add_argument('--warmupepochs', action='store', type=int, default=5, help='No wawrmup epochs')
     return parser
+
 
 if __name__ == '__main__':
 
@@ -415,7 +377,6 @@ if __name__ == '__main__':
 
     #Architectures to import
     from EcalEnergyGan import generator, discriminator
-    # from EnergyGan import discriminator_capsule
 
     nb_epochs = params.nbepochs #Total Epochs
     batch_size = params.batchsize #batch size
@@ -440,5 +401,5 @@ if __name__ == '__main__':
     d=discriminator()
     g=generator(latent_size)
     
-    GanTrain2D(d, g, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, weightdir, mod=fitmod, nb_epochs=nb_epochs, batch_size=batch_size, gen_weight=8, aux_weight=0.2, ecal_weight=0.1, xscale = xscale, verbose=verbose)
+    GanTrain(d, g, opt, global_batch_size, warmup_epochs, datapath, EventsperFile, nEvents, weightdir, mod=fitmod, nb_epochs=nb_epochs, batch_size=batch_size, latent_size=latent_size, gen_weight=8, aux_weight=0.2, ecal_weight=0.1, xscale = xscale, verbose=verbose)
     

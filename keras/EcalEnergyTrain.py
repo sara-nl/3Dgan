@@ -43,10 +43,10 @@ if __name__ == '__main__':
     g_weights = 'params_generator_epoch_' 
     d_weights = 'params_discriminator_epoch_' 
 
-    nb_epochs = 2
+    nb_epochs = 25
     batch_size = 128
     latent_size = 200
-    verbose = 'false'
+    verbose = False
     
     generator=generator(latent_size)
     discriminator=discriminator()
@@ -149,6 +149,7 @@ if __name__ == '__main__':
         print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
 
         nb_batches = int(X_train.shape[0] / batch_size)
+        print("Nbatches {}".format(nb_batches))
         if verbose:
             progress_bar = Progbar(target=nb_batches)
 
@@ -158,7 +159,7 @@ if __name__ == '__main__':
             if verbose:
                 progress_bar.update(index)
             else:
-                if index % 100 == 0:
+                if index % 1 == 0:
                     print('processed {}/{} batches'.format(index + 1, nb_batches))
 
             noise = np.random.normal(0, 1, (batch_size, latent_size))

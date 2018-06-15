@@ -24,24 +24,24 @@ def discriminator():
     
     image = Input(shape=(1, 25, 25, 25))
 
-    x = Conv3D(32, (5, 5,5), data_format='channels_first', padding='same')(image)
+    x = Conv3D(32, (5, 5, 5), data_format='channels_first', padding='same')(image)
     x = LeakyReLU()(x)
     x = Dropout(0.2)(x)
 
     x = ZeroPadding3D((2, 2,2))(x)
-    x = Conv3D(8, (5, 5, 5), data_format='channels_first', padding='valid')(x)
+    x = Conv3D(16, (5, 5, 5), data_format='channels_first', padding='valid')(x)
     x = LeakyReLU()(x)
     x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
 
     x = ZeroPadding3D((2, 2, 2))(x)
-    x = Conv3D(8, (5, 5,5), data_format='channels_first', padding='valid')(x)
+    x = Conv3D(16, (5, 5, 5), data_format='channels_first', padding='valid')(x)
     x = LeakyReLU()(x)
     x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
 
     x = ZeroPadding3D((1, 1, 1))(x)
-    x = Conv3D(8, (5, 5, 5), data_format='channels_first', padding='valid')(x)
+    x = Conv3D(16, (5, 5, 5), data_format='channels_first', padding='valid')(x)
     x = LeakyReLU()(x)
     x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
@@ -66,8 +66,8 @@ def discriminator():
 def generator(latent_size=1024, return_intermediate=False):
 
     loc = Sequential([
-        Dense(64 * 7* 7, input_dim=latent_size),
-        Reshape((8, 7, 7,8)),
+        Dense(64 * 7 * 7, input_dim=latent_size),
+        Reshape((8, 7, 7, 8)),
 
         Conv3D(64, (6, 6, 8), data_format='channels_first', padding='same', kernel_initializer='he_uniform'),
         LeakyReLU(),
@@ -75,13 +75,13 @@ def generator(latent_size=1024, return_intermediate=False):
         UpSampling3D(size=(2, 2, 2)),
 
         ZeroPadding3D((2, 2, 0)),
-        Conv3D(6, (6, 5, 8), data_format='channels_first', kernel_initializer='he_uniform'),
+        Conv3D(16, (6, 5, 8), data_format='channels_first', kernel_initializer='he_uniform'),
         LeakyReLU(),
         BatchNormalization(),
         UpSampling3D(size=(2, 2, 3)),
 
-        ZeroPadding3D((1,0,3)),
-        Conv3D(6, (3, 3, 8), data_format='channels_first', kernel_initializer='he_uniform'),
+        ZeroPadding3D((1, 0, 3)),
+        Conv3D(16, (3, 3, 8), data_format='channels_first', kernel_initializer='he_uniform'),
         LeakyReLU(),
         Conv3D(1, (2, 2, 2), data_format='channels_first', use_bias=False, kernel_initializer='glorot_normal'),
         Activation('relu')
