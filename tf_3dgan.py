@@ -40,7 +40,7 @@ def generator(z,reuse=None):
     with tf.variable_scope('gen',reuse=reuse):
         hidden1 = tf.layers.dense(inputs=z, units=64 * 7 * 7)
 
-        reshape1=tf.reshape(hidden1, [-1, 8, 7, 7, 8])
+        reshape1=tf.reshape(hidden1, [-1, 7, 7, 8, 8])
         
         hidden2=tf.layers.conv3d(inputs=reshape1, filters=64, kernel_size=(6, 6, 8), padding='same', kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
         
@@ -50,7 +50,7 @@ def generator(z,reuse=None):
         
         zeropadding1=tf.keras.layers.ZeroPadding3D((2, 2, 0))(upsampling1)
         
-        hidden3=tf.layers.conv3d(inputs=zeropadding1, filters=16, kernel_size=(6, 5, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
+        hidden3=tf.layers.conv3d(inputs=zeropadding1, filters=6, kernel_size=(6, 5, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
         
         batchnorm2=tf.layers.batch_normalization(hidden3)
         
@@ -58,7 +58,7 @@ def generator(z,reuse=None):
 
         zeropadding2=tf.keras.layers.ZeroPadding3D((1, 0, 3))(upsampling2)
 
-        hidden4=tf.layers.conv3d(inputs=zeropadding2, filters=16, kernel_size=(3, 3, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
+        hidden4=tf.layers.conv3d(inputs=zeropadding2, filters=6, kernel_size=(3, 3, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
         
         hidden5=tf.layers.conv3d(inputs=hidden4, filters=1, kernel_size=(2, 2, 2), kernel_initializer=tf.keras.initializers.glorot_normal(), activation=tf.nn.relu, use_bias=False)
 
@@ -68,13 +68,13 @@ def generator(z,reuse=None):
 def discriminator(X,reuse=None):
     print("X shape", X.shape)
     with tf.variable_scope('dis',reuse=reuse):
-        hidden1=tf.layers.conv3d(inputs=X, filters=16, kernel_size=(5, 5, 5), padding='same', activation=tf.nn.leaky_relu)
+        hidden1=tf.layers.conv3d(inputs=X, filters=32, kernel_size=(5, 5, 5), padding='same', activation=tf.nn.leaky_relu)
         
         dropout1=tf.layers.dropout(hidden1, 0.2)
         
         zeropadding1=tf.keras.layers.ZeroPadding3D((2, 2, 2))(dropout1)
         
-        hidden2=tf.layers.conv3d(inputs=zeropadding1, filters=16, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
+        hidden2=tf.layers.conv3d(inputs=zeropadding1, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
         
         batchnorm1=tf.layers.batch_normalization(hidden2)
         
@@ -82,7 +82,7 @@ def discriminator(X,reuse=None):
 
         zeropadding2=tf.keras.layers.ZeroPadding3D((2, 2, 2))(dropout2)
         
-        hidden3=tf.layers.conv3d(inputs=zeropadding2, filters=16, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
+        hidden3=tf.layers.conv3d(inputs=zeropadding2, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
         
         batchnorm2=tf.layers.batch_normalization(hidden3)
         
@@ -90,7 +90,7 @@ def discriminator(X,reuse=None):
         
         zeropadding3=tf.keras.layers.ZeroPadding3D((1, 1, 1))(dropout3)
         
-        hidden4=tf.layers.conv3d(inputs=zeropadding3, filters=16, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
+        hidden4=tf.layers.conv3d(inputs=zeropadding3, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
         
         batchnorm3=tf.layers.batch_normalization(hidden4)
         
@@ -104,7 +104,7 @@ def discriminator(X,reuse=None):
         
         aux=tf.layers.dense(flatten, units=1, activation=None)
         
-        ecal=tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=(2, 3, 4)))(X)
+        # ecal=tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=(2, 3, 4)))(X)
 
         return fake,aux
     
