@@ -11,8 +11,20 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D # for 3d plotting
 import h5py
 import time
-
+import horovod.tensorflow as hvd
 from keras.layers.convolutional import UpSampling3D, ZeroPadding3D
+import os
+
+config = tf.ConfigProto(log_device_placement=True)
+config.intra_op_parallelism_threads = 11
+config.inter_op_parallelism_threads = 1
+os.environ['KMP_BLOCKTIME'] = str(1)
+os.environ['KMP_SETTINGS'] = str(1)
+os.environ['KMP_AFFINITY'] = 'granularity=fine,verbose,compact,1,0'
+os.environ['KMP_AFFINITY'] = 'balanced'
+os.environ['OMP_NUM_THREADS'] = str(11)
+
+hvd.init()
 
 # load the data
 with h5py.File('full_dataset_vectors.h5', 'r') as hf:
@@ -31,11 +43,8 @@ def data_transform(data):
         data_t.append(result.reshape(25, 25, 25, 1))
     return np.asarray(data_t, dtype=np.float32)
 
-n_classes = 1
-
 x_train = data_transform(x_train_raw)
 x_train_data=x_train[:100]
-
 
 def generator(z,reuse=None):
     with tf.variable_scope('gen',reuse=reuse):
@@ -134,18 +143,20 @@ tvars=tf.trainable_variables()  #returns all variables created(the two variable 
 d_vars=[var for var in tvars if 'dis' in var.name]
 g_vars=[var for var in tvars if 'gen' in var.name]
 
-D_trainer=tf.train.AdamOptimizer(lr).minimize(D_loss,var_list=d_vars)
-G_trainer=tf.train.AdamOptimizer(lr).minimize(G_loss,var_list=g_vars)
+D_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_loss,var_list=d_vars)
+G_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(G_loss,var_list=g_vars)
 
 batch_size=100
+g_batch_size=100*hvd.size()
 epochs=5
 init=tf.global_variables_initializer()
 
 samples=[] #generator examples
 
-with tf.Session() as sess:
+with tf.Session(config=config) as sess:
     sess.run(init)
-    num_batches = int(len(x_train_data)/batch_size) + 1
+    hvd.broadcast_global_variables(0)
+    num_batches = int(len(x_train_data)/g_batch_size) + 1
     
     for epoch in range(epochs):
         startt=time.time()
