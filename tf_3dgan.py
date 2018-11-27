@@ -167,12 +167,13 @@ with tf.Session(config=config) as sess:
             if batch_images.shape[0]>0:
                 batch_images=batch_images.reshape((batch_size, 25, 25, 25, 1))
                 batch_images=batch_images*2-1
-                batch_z=np.random.uniform(-1,1,size=(batch_size,100))
+                batch_z=np.random.uniform(1, 5, size=(batch_size, 100))
                 _ = sess.run(D_trainer,feed_dict={real_images:batch_images,z:batch_z})
                 _ = sess.run(G_trainer,feed_dict={z:batch_z})
 
         print("Epoch{} took {}s".format(epoch, time.time()-startt))
-        sample_z=np.random.uniform(-1,1,size=(100,100))
+
+        sample_z=np.random.uniform(1, 5,size=(100,100))
         starti=time.time()
         gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})
         print("Generation for 1 sample took {}s".format((time.time()-starti)/100))
