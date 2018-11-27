@@ -10,8 +10,10 @@ from keras.utils import to_categorical
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D # for 3d plotting
 import h5py
+import time
 
 from keras.layers.convolutional import UpSampling3D, ZeroPadding3D
+
 # load the data
 with h5py.File('full_dataset_vectors.h5', 'r') as hf:
     x_train_raw = hf["X_train"][:]
@@ -32,8 +34,7 @@ def data_transform(data):
 n_classes = 1
 
 x_train = data_transform(x_train_raw)
-x_test = data_transform(x_test_raw)
-x_train_data=x_train
+x_train_data=x_train[:100]
 
 
 def generator(z,reuse=None):
@@ -66,7 +67,6 @@ def generator(z,reuse=None):
 
 
 def discriminator(X,reuse=None):
-    print("X shape", X.shape)
     with tf.variable_scope('dis',reuse=reuse):
         hidden1=tf.layers.conv3d(inputs=X, filters=32, kernel_size=(5, 5, 5), padding='same', activation=tf.nn.leaky_relu)
         
@@ -146,8 +146,9 @@ samples=[] #generator examples
 with tf.Session() as sess:
     sess.run(init)
     num_batches = int(len(x_train_data)/batch_size) + 1
+    
     for epoch in range(epochs):
-
+        startt=time.time()
         epoch_lossG = 0
         epoch_lossD = 0
         for i in range(num_batches):
@@ -157,26 +158,26 @@ with tf.Session() as sess:
                 batch_images=batch_images*2-1
                 batch_z=np.random.uniform(-1,1,size=(batch_size,100))
                 _ = sess.run(D_trainer,feed_dict={real_images:batch_images,z:batch_z})
-                _=sess.run(G_trainer,feed_dict={z:batch_z})
+                _ = sess.run(G_trainer,feed_dict={z:batch_z})
 
-        print("on epoch{}".format(epoch))
-        
-        sample_z=np.random.uniform(-1,1,size=(1,100))
+        print("Epoch{} took {}s".format(epoch, time.time()-startt))
+        sample_z=np.random.uniform(-1,1,size=(100,100))
+        starti=time.time()
         gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})
-        
+        print("Generation for 1 sample took {}s".format((time.time()-starti)/100))
         samples.append(gen_sample)
 
 
-# # plt.imshow(samples[0][0].reshape(16,16,16,3))
+# # plt.imshow(samples[0][0].reshape(25,25,25,1))
 
 # fig = plt.figure()
 # ax = fig.gca(projection='3d')
 
-# samples=samples[0][0].reshape(16,16,16)
+# samples=samples[0][0].reshape(25,25,25)
 # import ipdb; ipdb.set_trace()
 
 # ax.plot(*samples, label='parametric curve')
 # ax.legend()
 
 # plt.show()
-# # plt.imshow(samples[20][0].reshape(16,16,16,3))
+# # plt.imshow(samples[20][0].reshape(25,25,25,1))
