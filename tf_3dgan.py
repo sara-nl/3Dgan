@@ -26,9 +26,11 @@ except ImportError:
 
 
 def bit_flip(x, prob=0.05):
+    print(x.shape)
     x = np.array(x)
     selection = rng.uniform(0, 1, x.shape) < prob
     x[selection] = 1 * np.logical_not(x[selection])
+    print(x.shape)
     return x
 
 
@@ -281,6 +283,7 @@ with tf.Session(config=config) as sess:
             energy_batch = Y_train[i*batch_size: (i+1)*batch_size]
             ecal_batch = ecal_train[i*batch_size: (i+1)*batch_size]
             if image_batch.shape[0]>0:
+
                 image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
                 # image_batch=image_batch*2-1
 
@@ -288,8 +291,11 @@ with tf.Session(config=config) as sess:
                 generator_ip = np.multiply(sampled_energies, noise)
                 ecal_ip = np.multiply(2, sampled_energies)
 
-                generated = sess.run(G_trainer,feed_dict={z:generator_ip})
-                
+                _ = sess.run(G_trainer,feed_dict={z:generator_ip})
+
+                generated=sess.run(generator(z,reuse=True),feed_dict={z:generator_ip})
+
+                print(generated.shape)
                 _ = sess.run(D_trainer,feed_dict={real_images:image_batch,z:[bit_flip(np.ones(batch_size)), energy_batch, ecal_batch]})
                 _ = sess.run(D_trainer,feed_dict={real_images:generated,z:[bit_flip(np.zeros(batch_size)), sampled_energies, ecal_ip]})
 
