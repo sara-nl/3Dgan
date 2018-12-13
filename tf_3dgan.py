@@ -284,7 +284,7 @@ with tf.Session(config=config) as sess:
             ecal_batch = ecal_train[i*batch_size: (i+1)*batch_size]
             if image_batch.shape[0]>0:
 
-                image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
+                # image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
                 # image_batch=image_batch*2-1
 
                 sampled_energies = rng.uniform(1, 5, size=(batch_size, 1))
@@ -295,7 +295,6 @@ with tf.Session(config=config) as sess:
 
                 generated=sess.run(generator(z,reuse=True),feed_dict={z:generator_ip})
 
-                print(generated.shape)
                 _ = sess.run(D_trainer,feed_dict={real_images:image_batch,z:[bit_flip(np.ones(batch_size)), energy_batch, ecal_batch]})
                 _ = sess.run(D_trainer,feed_dict={real_images:generated,z:[bit_flip(np.zeros(batch_size)), sampled_energies, ecal_ip]})
 
