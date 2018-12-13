@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
+from tensorflow.python.framework import ops
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorflow.examples.tutorials.mnist import input_data
@@ -11,17 +12,21 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D # for 3d plotting
 import h5py
 import time
+import glob
+import math
+import psutil
+import socket
 import horovod.tensorflow as hvd
 from keras.layers.convolutional import UpSampling3D, ZeroPadding3D
 import os
 try:
-    import np.random_intel as rng
+    import numpy.random_intel as rng
 except ImportError:
-    import np.random as rng
+    from numpy import random as rng
 
 
 def bit_flip(x, prob=0.05):
-    x = numpy.array(x)
+    x = np.array(x)
     selection = rng.uniform(0, 1, x.shape) < prob
     x[selection] = 1 * np.logical_not(x[selection])
     return x
@@ -41,7 +46,6 @@ batch_size = 128
 latent_size = 200
 epochs = 5
 g_batch_size = batch_size * hvd.size()
-init = tf.global_variables_initializer()
 
 
 def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.9,.1],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
@@ -122,13 +126,15 @@ def GetData(datafile, xscale =1, yscale = 100, dimensions = 3):
 def data_transform(data):
     result = np.zeros(25 * 25 * 25)
     data_t = []
+    print(data.shape)
     for i in range(data.shape[0]):
+        print(data[i].shape[0])
         result[:data[i].shape[0]] = data[i]
         data_t.append(result.reshape(25, 25, 25, 1))
     return np.asarray(data_t, dtype=np.float32)
 
 
-Trainfiles, Testfiles = DivideFiles("/eos/project/d/dshep/LCD/V1/*scan/*.h5", nEvents=200000, EventsperFile=10000, datasetnames=["ECAL"], Particles =["Ele"])
+Trainfiles, Testfiles = DivideFiles("/scratch/04653/damianp/eos/project/d/dshep/LCD/V1/*scan/*.h5", nEvents=200000, EventsperFile=10000, datasetnames=["ECAL"], Particles=["Ele"], MaxFiles=1)
 
 if hvd.rank()==0:
     print("Train files: {0} \nTest files: {1}".format(Trainfiles, Testfiles))
@@ -155,9 +161,9 @@ for index, dtrain in enumerate(Trainfiles):
 
 print("On hostname {0} - After init using {1} memory".format(socket.gethostname(), psutil.Process(os.getpid()).memory_info()[0]))
 
-X_train = data_transform(X_temp)
-Y_train = data_transform(Y_train)
-ecal_train = data_transform(ecal_train)
+# X_train = data_transform(X_temp)
+# Y_train = data_transform(Y_train)
+# ecal_train = data_transform(ecal_train)
 
 def generator(z,reuse=None):
     with tf.variable_scope('gen',reuse=reuse):
@@ -208,7 +214,7 @@ def discriminator(X,reuse=None):
         
         fake=tf.layers.dense(flatten, units=1, activation=tf.nn.sigmoid)
         aux=tf.layers.dense(flatten, units=1, activation=None)
-        ecal=tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=(2, 3, 4)))(X)
+        ecal=tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=(1, 2, 3)))(X)
 
         return fake, aux, ecal
     
@@ -223,7 +229,7 @@ D_real_output, D_real_aux, D_real_ecal = discriminator(real_images)
 D_fake_output, D_fake_aux, D_fake_ecal = discriminator(G,reuse=True)
 
 def binary_crossentropy(logits_in,labels_in):
-    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_in,labels=labels_in))
+    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels_in, logits=logits_in))
 
 def mean_absolute_percentage_error(outputs,y):
     return tf.reduce_mean(tf.abs(tf.divide(tf.subtract(outputs,y),y)))
@@ -231,16 +237,16 @@ def mean_absolute_percentage_error(outputs,y):
 D_real_output_loss = binary_crossentropy(D_real_output, tf.ones_like(D_real_output)) #*0.9)
 D_real_aux_loss = mean_absolute_percentage_error(D_real_aux, tf.ones_like(D_real_aux)) #*0.9)
 D_real_ecal_loss = mean_absolute_percentage_error(D_real_ecal,tf.ones_like(D_real_ecal)) #*0.9)
-D_real_loss = tf.reduce_sum(6*D_real_output_loss, 0.2*D_real_aux_loss, 0.1*D_real_ecal_loss)
+D_real_loss = tf.reduce_sum([6*D_real_output_loss, 0.2*D_real_aux_loss, 0.1*D_real_ecal_loss])
 
 D_fake_output_loss = binary_crossentropy(D_real_output, tf.zeros_like(D_real_output))
 D_fake_aux_loss = mean_absolute_percentage_error(D_fake_aux, tf.zeros_like(D_fake_aux))
 D_fake_ecal_loss = mean_absolute_percentage_error(D_fake_ecal, tf.zeros_like(D_fake_ecal))
-D_fake_loss = tf.reduce_sum(6*D_fake_output_loss, 0.2*D_fake_aux_loss, 0.1*D_fake_ecal_loss)
+D_fake_loss = tf.reduce_sum([6*D_fake_output_loss, 0.2*D_fake_aux_loss, 0.1*D_fake_ecal_loss])
 
 D_loss = (D_real_output_loss + D_fake_loss) / 2
 
-G_loss = binary_crossentropy(D_real_output, tf.ones_like(D_real_output))
+G_loss = binary_crossentropy(D_fake_output, tf.ones_like(D_fake_output))
 
 lr=0.001
 
@@ -253,6 +259,11 @@ D_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).mini
 G_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(G_loss,var_list=g_vars)
 
 samples=[] #generator examples
+
+# all_variables_list = ops.get_collection(ops.GraphKeys.GLOBAL_VARIABLES)
+# print(all_variables_list)
+# tf.variables_initializer(var_list=all_variables_list)
+init = tf.global_variables_initializer()
 
 with tf.Session(config=config) as sess:
     sess.run(init)
@@ -271,14 +282,14 @@ with tf.Session(config=config) as sess:
             ecal_batch = ecal_train[i*batch_size: (i+1)*batch_size]
             if image_batch.shape[0]>0:
                 image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
-                image_batch=image_batch*2-1
+                # image_batch=image_batch*2-1
 
                 sampled_energies = rng.uniform(1, 5, size=(batch_size, 1))
                 generator_ip = np.multiply(sampled_energies, noise)
                 ecal_ip = np.multiply(2, sampled_energies)
 
                 generated = sess.run(G_trainer,feed_dict={z:generator_ip})
-
+                
                 _ = sess.run(D_trainer,feed_dict={real_images:image_batch,z:[bit_flip(np.ones(batch_size)), energy_batch, ecal_batch]})
                 _ = sess.run(D_trainer,feed_dict={real_images:generated,z:[bit_flip(np.zeros(batch_size)), sampled_energies, ecal_ip]})
 
