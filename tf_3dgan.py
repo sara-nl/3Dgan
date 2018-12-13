@@ -14,6 +14,18 @@ import time
 import horovod.tensorflow as hvd
 from keras.layers.convolutional import UpSampling3D, ZeroPadding3D
 import os
+try:
+    import np.random_intel as rng
+except ImportError:
+    import np.random as rng
+
+
+def bit_flip(x, prob=0.05):
+    x = numpy.array(x)
+    selection = rng.uniform(0, 1, x.shape) < prob
+    x[selection] = 1 * np.logical_not(x[selection])
+    return x
+
 
 config = tf.ConfigProto(log_device_placement=True)
 config.intra_op_parallelism_threads = 11
@@ -30,21 +42,6 @@ latent_size = 200
 epochs = 5
 g_batch_size = batch_size * hvd.size()
 init = tf.global_variables_initializer()
-
-
-def bit_flip(x, prob=0.05):
-    """ flips a int array's values with some probability """
-    x = np.array(x)
-    selection = np.random.uniform(0, 1, x.shape) < prob
-    x[selection] = 1 * np.logical_not(x[selection])
-    return x
-
-# # load the data
-# with h5py.File('full_dataset_vectors.h5', 'r') as hf:
-#     x_train_raw = hf["X_train"][:]
-#     y_train_raw = hf["y_train"][:]
-#     x_test_raw = hf["X_test"][:]
-#     y_test_raw = hf["y_test"][:]
 
 
 def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.9,.1],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
@@ -254,7 +251,7 @@ g_vars=[var for var in tvars if 'gen' in var.name]
 
 D_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_loss,var_list=d_vars)
 G_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(G_loss,var_list=g_vars)
-C_trainer
+
 samples=[] #generator examples
 
 with tf.Session(config=config) as sess:
@@ -268,7 +265,7 @@ with tf.Session(config=config) as sess:
         epoch_lossD = 0
 
         for i in range(num_batches):
-            noise = np.random.normal(0, 1, (batch_size, latent_size))
+            noise = rng.normal(0, 1, (batch_size, latent_size))
             image_batch = X_train[i*batch_size: (i+1)*batch_size]
             energy_batch = Y_train[i*batch_size: (i+1)*batch_size]
             ecal_batch = ecal_train[i*batch_size: (i+1)*batch_size]
@@ -276,7 +273,7 @@ with tf.Session(config=config) as sess:
                 image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
                 image_batch=image_batch*2-1
 
-                sampled_energies = np.random.uniform(1, 5, size=(batch_size, 1))
+                sampled_energies = rng.uniform(1, 5, size=(batch_size, 1))
                 generator_ip = np.multiply(sampled_energies, noise)
                 ecal_ip = np.multiply(2, sampled_energies)
 
@@ -288,8 +285,8 @@ with tf.Session(config=config) as sess:
                 trick = np.ones(batch_size)
 
                 for _ in range(2):
-                    noise = np.random.normal(0, 1, (batch_size, latent_size))
-                    sampled_energies = np.random.uniform(1, 5, ( batch_size,1 ))
+                    noise = rng.normal(0, 1, (batch_size, latent_size))
+                    sampled_energies = rng.uniform(1, 5, ( batch_size,1 ))
                     generator_ip = np.multiply(sampled_energies, noise)
                     ecal_ip = np.multiply(2, sampled_energies)
                     _ = sess.run(D_trainer,feed_dict={real_images:generator_ip,z:[trick, sampled_energies.reshape((-1, 1)), ecal_ip]})
@@ -297,7 +294,7 @@ with tf.Session(config=config) as sess:
 
         print("Epoch{} took {}s".format(epoch, time.time()-startt))
 
-        sample_z=np.random.uniform(1, 5,size=(batch_size,latent_size))
+        sample_z=rng.uniform(1, 5,size=(batch_size,latent_size))
         starti=time.time()
         gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})
         print("Generation for 1 sample took {}s".format((time.time()-starti)/batch_size))
