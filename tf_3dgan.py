@@ -25,13 +25,100 @@ os.environ['KMP_AFFINITY'] = 'balanced'
 os.environ['OMP_NUM_THREADS'] = str(11)
 
 hvd.init()
+batch_size = 128
+latent_size = 200
+epochs = 5
+g_batch_size = batch_size * hvd.size()
+init = tf.global_variables_initializer()
 
-# load the data
-with h5py.File('full_dataset_vectors.h5', 'r') as hf:
-    x_train_raw = hf["X_train"][:]
-    y_train_raw = hf["y_train"][:]
-    x_test_raw = hf["X_test"][:]
-    y_test_raw = hf["y_test"][:]
+
+def bit_flip(x, prob=0.05):
+    """ flips a int array's values with some probability """
+    x = np.array(x)
+    selection = np.random.uniform(0, 1, x.shape) < prob
+    x[selection] = 1 * np.logical_not(x[selection])
+    return x
+
+# # load the data
+# with h5py.File('full_dataset_vectors.h5', 'r') as hf:
+#     x_train_raw = hf["X_train"][:]
+#     y_train_raw = hf["y_train"][:]
+#     x_test_raw = hf["X_test"][:]
+#     y_test_raw = hf["y_test"][:]
+
+
+def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.9,.1],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
+    
+    Files =sorted( glob.glob(FileSearch))
+    Filesused = int(math.ceil(nEvents/EventsperFile))
+    FileCount=0
+   
+    Samples={}
+    for F in Files:
+        FileCount+=1
+        basename=os.path.basename(F)
+        ParticleName=basename.split("_")[0].replace("Escan","")
+
+        if ParticleName in Particles:
+            try:
+                Samples[ParticleName].append(F)
+            except:
+                Samples[ParticleName]=[(F)]
+
+        if MaxFiles>0:
+            if FileCount>MaxFiles:
+                break
+    out=[]
+    for j in range(len(Fractions)):
+        out.append([])
+
+    SampleI=len(Samples.keys())*[int(0)]
+
+    for i,SampleName in enumerate(Samples):
+        Sample=Samples[SampleName][:Filesused]
+        NFiles=len(Sample)
+
+        for j,Frac in enumerate(Fractions):
+            EndI=int(SampleI[i]+ round(NFiles*Frac))
+            out[j]+=Sample[SampleI[i]:EndI]
+            SampleI[i]=EndI
+
+    return out
+
+
+# This functions loads data from a file and also does any pre processing
+def GetData(datafile, xscale =1, yscale = 100, dimensions = 3):
+    #get data for training
+    try:
+        if hvd.rank()==0:
+            print('Loading Data from .....', datafile)  
+    except NameError as e:
+        print('Loading Data from .....', datafile)
+        print('Running without horovod support')                                          
+                                
+    f=h5py.File(datafile,'r')
+    
+    X=np.array(f.get('ECAL'))
+    
+    Y=f.get('target')
+    Y=(np.array(Y[:,1]))
+
+    X[X < 1e-6] = 0
+    X = np.expand_dims(X, axis=-1)
+    X = X.astype(np.float32)
+    if dimensions == 2:
+        X = np.sum(X, axis=(1))
+        X = xscale * X
+    X = np.moveaxis(X, -1, 1)
+
+    Y = np.expand_dims(Y, axis=-1)
+    Y = Y.astype(np.float32)
+    Y = Y/yscale
+    Y = np.moveaxis(Y, -1, 1)
+
+    ecal = np.sum(X, axis=(2, 3, 4))
+    
+    return X, Y, ecal
 
 
 # Transform data from 1d to 3d rgb
@@ -43,33 +130,55 @@ def data_transform(data):
         data_t.append(result.reshape(25, 25, 25, 1))
     return np.asarray(data_t, dtype=np.float32)
 
-x_train = data_transform(x_train_raw)
-x_train_data=x_train[:100]
+
+Trainfiles, Testfiles = DivideFiles("/eos/project/d/dshep/LCD/V1/*scan/*.h5", nEvents=200000, EventsperFile=10000, datasetnames=["ECAL"], Particles =["Ele"])
+
+if hvd.rank()==0:
+    print("Train files: {0} \nTest files: {1}".format(Trainfiles, Testfiles))
+
+#Read test data into a single array
+for index, dtest in enumerate(Testfiles):
+   if index == 0:
+       X_test, Y_test, ecal_test = GetData(dtest)
+   else:
+       X_temp, Y_temp, ecal_temp = GetData(dtest)
+       X_test = np.concatenate((X_test, X_temp))
+       Y_test = np.concatenate((Y_test, Y_temp))
+       ecal_test = np.concatenate((ecal_test, ecal_temp))
+
+for index, dtrain in enumerate(Trainfiles):
+    if index == 0:
+        X_train, Y_train, ecal_train = GetData(dtrain)
+    else:
+        X_temp, Y_temp, ecal_temp = GetData(dtrain)
+        X_train = np.concatenate((X_train, X_temp))
+        Y_train = np.concatenate((Y_train, Y_temp))
+        ecal_train = np.concatenate((ecal_train, ecal_temp))
+
+
+print("On hostname {0} - After init using {1} memory".format(socket.gethostname(), psutil.Process(os.getpid()).memory_info()[0]))
+
+X_train = data_transform(X_temp)
+Y_train = data_transform(Y_train)
+ecal_train = data_transform(ecal_train)
 
 def generator(z,reuse=None):
     with tf.variable_scope('gen',reuse=reuse):
         hidden1 = tf.layers.dense(inputs=z, units=64 * 7 * 7)
-
         reshape1=tf.reshape(hidden1, [-1, 7, 7, 8, 8])
-        
         hidden2=tf.layers.conv3d(inputs=reshape1, filters=64, kernel_size=(6, 6, 8), padding='same', kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
-        
         batchnorm1=tf.layers.batch_normalization(hidden2)
         
         upsampling1=tf.keras.layers.UpSampling3D(size=(2, 2, 2))(batchnorm1)
-        
         zeropadding1=tf.keras.layers.ZeroPadding3D((2, 2, 0))(upsampling1)
         
         hidden3=tf.layers.conv3d(inputs=zeropadding1, filters=6, kernel_size=(6, 5, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
-        
         batchnorm2=tf.layers.batch_normalization(hidden3)
         
         upsampling2=tf.keras.layers.UpSampling3D(size=(2, 2, 3))(batchnorm2)
-
         zeropadding2=tf.keras.layers.ZeroPadding3D((1, 0, 3))(upsampling2)
 
         hidden4=tf.layers.conv3d(inputs=zeropadding2, filters=6, kernel_size=(3, 3, 8), kernel_initializer=tf.keras.initializers.he_uniform(), activation=tf.nn.leaky_relu)
-        
         hidden5=tf.layers.conv3d(inputs=hidden4, filters=1, kernel_size=(2, 2, 2), kernel_initializer=tf.keras.initializers.glorot_normal(), activation=tf.nn.relu, use_bias=False)
 
         return hidden5
@@ -78,63 +187,63 @@ def generator(z,reuse=None):
 def discriminator(X,reuse=None):
     with tf.variable_scope('dis',reuse=reuse):
         hidden1=tf.layers.conv3d(inputs=X, filters=32, kernel_size=(5, 5, 5), padding='same', activation=tf.nn.leaky_relu)
-        
         dropout1=tf.layers.dropout(hidden1, 0.2)
         
         zeropadding1=tf.keras.layers.ZeroPadding3D((2, 2, 2))(dropout1)
         
         hidden2=tf.layers.conv3d(inputs=zeropadding1, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
-        
         batchnorm1=tf.layers.batch_normalization(hidden2)
-        
         dropout2=tf.layers.dropout(batchnorm1, 0.2)
 
         zeropadding2=tf.keras.layers.ZeroPadding3D((2, 2, 2))(dropout2)
         
         hidden3=tf.layers.conv3d(inputs=zeropadding2, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
-        
         batchnorm2=tf.layers.batch_normalization(hidden3)
-        
         dropout3=tf.layers.dropout(batchnorm2, 0.2)
         
         zeropadding3=tf.keras.layers.ZeroPadding3D((1, 1, 1))(dropout3)
         
         hidden4=tf.layers.conv3d(inputs=zeropadding3, filters=8, kernel_size=(5, 5, 5), padding='valid', activation=tf.nn.leaky_relu)
-        
         batchnorm3=tf.layers.batch_normalization(hidden4)
-        
         dropout4=tf.layers.dropout(batchnorm3, 0.2)
-
         avgpooling=tf.layers.average_pooling3d(dropout4, (2, 2, 2), 1)
-
         flatten=tf.layers.flatten(avgpooling)
-
+        
         fake=tf.layers.dense(flatten, units=1, activation=tf.nn.sigmoid)
-        
         aux=tf.layers.dense(flatten, units=1, activation=None)
-        
-        # ecal=tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=(2, 3, 4)))(X)
+        ecal=tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=(2, 3, 4)))(X)
 
-        return fake,aux
+        return fake, aux, ecal
     
 
 tf.reset_default_graph()
 
-real_images=tf.placeholder(tf.float32,shape=[None, 25, 25, 25, 1])
-z=tf.placeholder(tf.float32,shape=[None,100])
+real_images = tf.placeholder(tf.float32,shape=[None, 25, 25, 25, 1])
+z = tf.placeholder(tf.float32,shape=[None, latent_size])
 
 G=generator(z)
-D_output_real,D_logits_real=discriminator(real_images)
-D_output_fake,D_logits_fake=discriminator(G,reuse=True)
+D_real_output, D_real_aux, D_real_ecal = discriminator(real_images)
+D_fake_output, D_fake_aux, D_fake_ecal = discriminator(G,reuse=True)
 
-def loss_func(logits_in,labels_in):
+def binary_crossentropy(logits_in,labels_in):
     return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_in,labels=labels_in))
 
-D_real_loss=loss_func(D_logits_real,tf.ones_like(D_logits_real)*0.9) #Smoothing for generalization
-D_fake_loss=loss_func(D_logits_fake,tf.zeros_like(D_logits_real))
-D_loss=D_real_loss+D_fake_loss
+def mean_absolute_percentage_error(outputs,y):
+    return tf.reduce_mean(tf.abs(tf.divide(tf.subtract(outputs,y),y)))
 
-G_loss= loss_func(D_logits_fake,tf.ones_like(D_logits_fake))
+D_real_output_loss = binary_crossentropy(D_real_output, tf.ones_like(D_real_output)) #*0.9)
+D_real_aux_loss = mean_absolute_percentage_error(D_real_aux, tf.ones_like(D_real_aux)) #*0.9)
+D_real_ecal_loss = mean_absolute_percentage_error(D_real_ecal,tf.ones_like(D_real_ecal)) #*0.9)
+D_real_loss = tf.reduce_sum(6*D_real_output_loss, 0.2*D_real_aux_loss, 0.1*D_real_ecal_loss)
+
+D_fake_output_loss = binary_crossentropy(D_real_output, tf.zeros_like(D_real_output))
+D_fake_aux_loss = mean_absolute_percentage_error(D_fake_aux, tf.zeros_like(D_fake_aux))
+D_fake_ecal_loss = mean_absolute_percentage_error(D_fake_ecal, tf.zeros_like(D_fake_ecal))
+D_fake_loss = tf.reduce_sum(6*D_fake_output_loss, 0.2*D_fake_aux_loss, 0.1*D_fake_ecal_loss)
+
+D_loss = (D_real_output_loss + D_fake_loss) / 2
+
+G_loss = binary_crossentropy(D_real_output, tf.ones_like(D_real_output))
 
 lr=0.001
 
@@ -145,51 +254,51 @@ g_vars=[var for var in tvars if 'gen' in var.name]
 
 D_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_loss,var_list=d_vars)
 G_trainer=hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(G_loss,var_list=g_vars)
-
-batch_size=100
-g_batch_size=100*hvd.size()
-epochs=5
-init=tf.global_variables_initializer()
-
+C_trainer
 samples=[] #generator examples
 
 with tf.Session(config=config) as sess:
     sess.run(init)
     hvd.broadcast_global_variables(0)
-    num_batches = int(len(x_train_data)/g_batch_size) + 1
+    num_batches = int(len(X_train)/g_batch_size) + 1
     
     for epoch in range(epochs):
         startt=time.time()
         epoch_lossG = 0
         epoch_lossD = 0
+
         for i in range(num_batches):
-            batch_images = x_train_data[i*batch_size: (i+1)*batch_size]
-            if batch_images.shape[0]>0:
-                batch_images=batch_images.reshape((batch_size, 25, 25, 25, 1))
-                batch_images=batch_images*2-1
-                batch_z=np.random.uniform(1, 5, size=(batch_size, 100))
-                _ = sess.run(D_trainer,feed_dict={real_images:batch_images,z:batch_z})
-                _ = sess.run(G_trainer,feed_dict={z:batch_z})
+            noise = np.random.normal(0, 1, (batch_size, latent_size))
+            image_batch = X_train[i*batch_size: (i+1)*batch_size]
+            energy_batch = Y_train[i*batch_size: (i+1)*batch_size]
+            ecal_batch = ecal_train[i*batch_size: (i+1)*batch_size]
+            if image_batch.shape[0]>0:
+                image_batch=image_batch.reshape((batch_size, 25, 25, 25, 1))
+                image_batch=image_batch*2-1
+
+                sampled_energies = np.random.uniform(1, 5, size=(batch_size, 1))
+                generator_ip = np.multiply(sampled_energies, noise)
+                ecal_ip = np.multiply(2, sampled_energies)
+
+                generated = sess.run(G_trainer,feed_dict={z:generator_ip})
+
+                _ = sess.run(D_trainer,feed_dict={real_images:image_batch,z:[bit_flip(np.ones(batch_size)), energy_batch, ecal_batch]})
+                _ = sess.run(D_trainer,feed_dict={real_images:generated,z:[bit_flip(np.zeros(batch_size)), sampled_energies, ecal_ip]})
+
+                trick = np.ones(batch_size)
+
+                for _ in range(2):
+                    noise = np.random.normal(0, 1, (batch_size, latent_size))
+                    sampled_energies = np.random.uniform(1, 5, ( batch_size,1 ))
+                    generator_ip = np.multiply(sampled_energies, noise)
+                    ecal_ip = np.multiply(2, sampled_energies)
+                    _ = sess.run(D_trainer,feed_dict={real_images:generator_ip,z:[trick, sampled_energies.reshape((-1, 1)), ecal_ip]})
+                
 
         print("Epoch{} took {}s".format(epoch, time.time()-startt))
 
-        sample_z=np.random.uniform(1, 5,size=(100,100))
+        sample_z=np.random.uniform(1, 5,size=(batch_size,latent_size))
         starti=time.time()
         gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})
-        print("Generation for 1 sample took {}s".format((time.time()-starti)/100))
+        print("Generation for 1 sample took {}s".format((time.time()-starti)/batch_size))
         samples.append(gen_sample)
-
-
-# # plt.imshow(samples[0][0].reshape(25,25,25,1))
-
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-
-# samples=samples[0][0].reshape(25,25,25)
-# import ipdb; ipdb.set_trace()
-
-# ax.plot(*samples, label='parametric curve')
-# ax.legend()
-
-# plt.show()
-# # plt.imshow(samples[20][0].reshape(25,25,25,1))
