@@ -6,7 +6,7 @@ from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
 import tensorflow as tf
-from keras.utils import to_categorical
+# from keras.utils import to_categorical
 import h5py
 import time
 import glob
@@ -39,13 +39,14 @@ os.environ['KMP_AFFINITY'] = 'balanced'
 os.environ['OMP_NUM_THREADS'] = str(11)
 
 hvd.init()
-batch_size = 128
+config.gpu_options.visible_device_list = str(hvd.local_rank())
+batch_size = 512
 latent_size = 200
-epochs = 5
+epochs = 40
 g_batch_size = batch_size * hvd.size()
 
 
-def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.5,.5],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
+def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.9,.1],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
     
     Files =sorted( glob.glob(FileSearch))
     Filesused = int(math.ceil(nEvents/EventsperFile))
@@ -119,7 +120,7 @@ def GetData(datafile, xscale = 1, yscale = 100, dimensions = 3):
     return X, Y, ecal
 
 
-Trainfiles, Testfiles = DivideFiles("/data/ahhesam/3dgan_data/*.h5", nEvents=200000, EventsperFile=10000, datasetnames=["ECAL"], Particles=["Ele"], MaxFiles=1)
+Trainfiles, Testfiles = DivideFiles("/mnt/nfshead/ahhesam/data/*.h5", nEvents=200000, EventsperFile=10000, datasetnames=["ECAL"], Particles=["Ele"], MaxFiles=-1)
 
 if hvd.rank()==0:
     print("Train files: {0} \nTest files: {1}".format(Trainfiles, Testfiles))
@@ -268,7 +269,8 @@ tvars = tf.trainable_variables()  #returns all variables created(the two variabl
 d_vars = [var for var in tvars if 'dis' in var.name]
 g_vars = [var for var in tvars if 'gen' in var.name]
 
-D_trainer = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_loss, var_list=d_vars)
+D_trainer_real = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_real_loss, var_list=d_vars)
+D_trainer_fake = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(D_fake_loss, var_list=d_vars)
 G_trainer = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr * hvd.size())).minimize(G_loss, var_list=g_vars)
 
 samples=[] # generator examples
@@ -291,7 +293,7 @@ with tf.Session(config=config) as sess:
         epoch_lossG = 0
         epoch_lossD = 0
 
-        for i in range(5):
+        for i in range(num_batches):
             print("doing batch {}".format(i))
             noise = rng.normal(0, 1, (batch_size, latent_size))
             image_batch = X_train[i*batch_size: (i+1)*batch_size]
@@ -305,10 +307,10 @@ with tf.Session(config=config) as sess:
 
                 generated = sess.run(generator(z,reuse=True),feed_dict={z:generator_ip})
 
-                _, disc_loss_r = sess.run([D_trainer, D_loss_real],feed_dict={real_images:image_batch,z:generator_ip, flipped_bits_ones:bit_flip(np.ones(batch_size)), energy_batch_ph:energy_batch, ecal_batch_ph:ecal_batch})
-                _, disc_loss_f = sess.run([D_trainer, D_loss_fake],feed_dict={real_images:generated,z:generator_ip, flipped_bits_zeroes:bit_flip(np.zeros(batch_size)), sampled_energies_ph:sampled_energies, ecal_ip_ph:ecal_ip})
-                writer.add_summary(disc_loss_r, epoch * 5 + i)
-                writer.add_summary(disc_loss_f, epoch * 5 + i)
+                _, disc_loss_r = sess.run([D_trainer_real, D_loss_real],feed_dict={real_images:image_batch,z:generator_ip, flipped_bits_ones:bit_flip(np.ones(batch_size)), energy_batch_ph:energy_batch, ecal_batch_ph:ecal_batch})
+                _, disc_loss_f = sess.run([D_trainer_fake, D_loss_fake],feed_dict={real_images:generated,z:generator_ip, flipped_bits_zeroes:bit_flip(np.zeros(batch_size)), sampled_energies_ph:sampled_energies, ecal_ip_ph:ecal_ip})
+                writer.add_summary(disc_loss_r, epoch * num_batches + i)
+                writer.add_summary(disc_loss_f, epoch * num_batches + i)
 
                 # _, summary_str = sess.run([G_trainer, G_loss_summary],feed_dict={z:generator_ip})
                 # writer.add_summary(summary_str, epoch * 5 + i)
@@ -321,7 +323,7 @@ with tf.Session(config=config) as sess:
                     generator_ip = np.multiply(sampled_energies, noise)
                     ecal_ip = np.multiply(2, sampled_energies)
                     _, summary_str = sess.run([G_trainer, G_loss_summary],feed_dict={real_images:generated,z:generator_ip})
-                writer.add_summary(summary_str, epoch * 5 + i)
+                writer.add_summary(summary_str, epoch * num_batches + i)
 
         print("Epoch{} took {}s".format(epoch, time.time()-startt))
 
