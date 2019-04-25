@@ -46,8 +46,8 @@ os.environ['KMP_AFFINITY'] = 'balanced'
 os.environ['OMP_NUM_THREADS'] = str(11)
 
 hvd.init()
-config.gpu_options.visible_device_list = str(hvd.local_rank())
-batch_size = 512
+# config.gpu_options.visible_device_list = str(hvd.local_rank())
+batch_size = 128
 latent_size = 200
 epochs = 40
 g_batch_size = batch_size * hvd.size()
@@ -390,27 +390,32 @@ with tf.Session(config=config) as sess:
     hvd.broadcast_global_variables(0)
     num_batches = int(len(X_train) / g_batch_size) + 1
 
+    # Throws an exception when the graph is modified from here on out 
+    sess.graph.finalize()
+
     for epoch in range(epochs):
         startt = time.time()
         epoch_lossG = 0
         epoch_lossD = 0
 
         for i in range(num_batches):
-            print 'doing batch {}'.format(i)
+            print 'Doing batch [{}/{}]'.format(i, num_batches)
             noise = rng.normal(0, 1, (batch_size, latent_size))
             image_batch = X_train[i * batch_size:(i + 1) * batch_size]
-            energy_batch = Y_train[i * batch_size:(i + 1)
-                * batch_size].flatten()
+            energy_batch = Y_train[i * batch_size:(i + 1) * batch_size].flatten()
             ecal_batch = ecal_train[i * batch_size:(i + 1) * batch_size]
 
+            # num_nodes = len([n.name for n in tf.get_default_graph().as_graph_def().node])
+            # print("Number of nodes in graph = {}".format(num_nodes))
+
             if image_batch.shape[0] > 0:
-                sampled_energies = rng.uniform(.1, 5, size=(batch_size,
-                        1))
+                sampled_energies = rng.uniform(.1, 5, size=(batch_size, 1))
                 generator_ip = np.multiply(sampled_energies, noise)
                 ecal_ip = np.multiply(2, sampled_energies)
 
-                generated = sess.run(generator(z, reuse=True),
-                        feed_dict={z: generator_ip})
+                # generated = sess.run(generator(z, reuse=True), feed_dict={z: generator_ip})
+                generated = sess.run(fake_images, feed_dict={z: generator_ip})
+                # fake_images
 
                 (_, disc_loss_r) = sess.run([D_trainer_real,
                         D_loss_real], feed_dict={
@@ -452,10 +457,9 @@ with tf.Session(config=config) as sess:
 
         sample_z = rng.uniform(1, 5, size=(batch_size, latent_size))
         starti = time.time()
-        gen_sample = sess.run(generator(z, reuse=True),
-                              feed_dict={z: sample_z})
+        gen_sample = sess.run(fake_images, feed_dict={z: sample_z})
+        # gen_sample = sess.run(generator(z, reuse=True),
+                              # feed_dict={z: sample_z})
         print 'Generation for 1 sample took {}s'.format((time.time()
                 - starti) / batch_size)
         samples.append(gen_sample)
-
-			
