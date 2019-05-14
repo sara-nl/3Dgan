@@ -290,8 +290,7 @@ ecal_ip_ph = tf.placeholder(tf.float32, shape=None)
 
 fake_images = generator(z)
 (D_real_output, D_real_aux, D_real_ecal) = discriminator(real_images)
-(D_fake_output, D_fake_aux, D_fake_ecal) = discriminator(fake_images,
-        reuse=True)
+(D_fake_output, D_fake_aux, D_fake_ecal) = discriminator(fake_images, reuse=True)
 
 
 def binary_crossentropy(logits_in, labels_in):
@@ -323,14 +322,10 @@ D_loss_r4 = tf.summary.scalar('total/discriminator_loss_real',
 D_loss_real = tf.summary.merge([D_loss_r1, D_loss_r2, D_loss_r3,
                                D_loss_r4])
 
-D_fake_output_loss = binary_crossentropy(D_real_output,
-        flipped_bits_zeroes)
-D_fake_aux_loss = mean_absolute_percentage_error(D_fake_aux,
-        sampled_energies_ph)
-D_fake_ecal_loss = mean_absolute_percentage_error(D_fake_ecal,
-        ecal_ip_ph)
-D_fake_loss = tf.reduce_sum([2 * D_fake_output_loss, .1
-                            * D_fake_aux_loss, .1 * D_fake_ecal_loss])
+D_fake_output_loss = binary_crossentropy(D_real_output, flipped_bits_zeroes)
+D_fake_aux_loss = mean_absolute_percentage_error(D_fake_aux, sampled_energies_ph)
+D_fake_ecal_loss = mean_absolute_percentage_error(D_fake_ecal, ecal_ip_ph)
+D_fake_loss = tf.reduce_sum([2 * D_fake_output_loss, .1 * D_fake_aux_loss, .1 * D_fake_ecal_loss])
 
 D_loss_f1 = tf.summary.scalar('output/discriminator_output_loss_fake',
                               D_fake_output_loss)
@@ -372,6 +367,7 @@ D_trainer_fake = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr
 G_trainer = hvd.DistributedOptimizer(tf.train.AdamOptimizer(lr
         * hvd.size())).minimize(G_loss, var_list=g_vars)
 
+# D_trainer = tf.group(D_trainer_real, D_trainer_fake)
 samples = []  # generator examples
 
 # all_variables_list = ops.get_collection(ops.GraphKeys.GLOBAL_VARIABLES)
@@ -391,7 +387,9 @@ with tf.Session(config=config) as sess:
     num_batches = int(len(X_train) / g_batch_size) + 1
 
     # Throws an exception when the graph is modified from here on out 
-    sess.graph.finalize()
+    # sess.graph.finalize()
+
+    saver = tf.train.Saver()
 
     for epoch in range(epochs):
         startt = time.time()
@@ -454,6 +452,8 @@ with tf.Session(config=config) as sess:
                 writer.add_summary(summary_str, epoch * num_batches + i)
 
         print 'Epoch{} took {}s'.format(epoch, time.time() - startt)
+
+        save_path = saver.save(sess, "./checkpoints/3d_gan_checkpoint.ckpt")
 
         sample_z = rng.uniform(1, 5, size=(batch_size, latent_size))
         starti = time.time()
