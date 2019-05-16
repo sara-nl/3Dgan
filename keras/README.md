@@ -1,4 +1,4 @@
-#Installation
+# Installation
 In order to replicate the run environment on Stampede2 you should run the ```init_env_stampede2.sh``` script:
 
 ```
@@ -22,16 +22,12 @@ fi
 
 This will load the environment, install the Python packages needed and activate the virtual environment
 
-#Run
+# Run
 The script [```job_stampede_4w_1n_16bs.sh```](job_stampede_4w_1n_16bs.sh) will launch a one node run with four workers.
 The shell script is configured for a system with 24C/socket or 48 Cores/Node and 4 workers/node. Our recommendation is that the following equation hold true:
 
-Inter_op * OMP_NUM_THREADS <= Physical Cores/Worker
+```Inter_op * OMP_NUM_THREADS <= Physical Cores/Worker```
 
-So, for a 48 Cores/Node and 4 Workers/Node => 12 Phy Cores/Workers.
+So, for a 48 Cores/Node and 4 Workers/Node we have 12 ```Phyical_Cores/Worker```.
 
-If inter_op = 2 then
-
-                OMP_NUM_THREADS = Physical Cores/worker / inter_op = 12/2 = 6
-
-                Intra_op = 48/4 = 12
+If ```inter_op``` is 2 then ```OMP_NUM_THREADS``` is ```Phyical_Cores/Worker``` divided by inter_op, therefore ```12/2 = 6```. In this case ```intra_op``` is ```48/4 = 12```
