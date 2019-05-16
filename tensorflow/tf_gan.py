@@ -33,27 +33,27 @@ def bit_flip(x, prob=0.05):
 
 
 config = tf.ConfigProto(log_device_placement=False)
-config.intra_op_parallelism_threads = 11
-config.inter_op_parallelism_threads = 1
+config.intra_op_parallelism_threads = 8
+config.inter_op_parallelism_threads = 2
 os.environ['KMP_BLOCKTIME'] = str(1)
 os.environ['KMP_SETTINGS'] = str(1)
 os.environ['KMP_AFFINITY'] = 'granularity=fine,verbose,compact,1,0'
 os.environ['KMP_AFFINITY'] = 'balanced'
-os.environ['OMP_NUM_THREADS'] = str(11)
+os.environ['OMP_NUM_THREADS'] = str(4)
 
 hvd.init()
 # config.gpu_options.visible_device_list = str(hvd.local_rank())
-batch_size = 128
+batch_size = 16
 latent_size = 200
 epochs = 40
 g_batch_size = batch_size * hvd.size()
 
 
 def DivideFiles(
-    FileSearch='/data/LCD/*/*.h5',
+    FileSearch='/scratch/shared/damian/CERN/EleScan/*.h5',
     nEvents=200000,
     EventsperFile=10000,
-    Fractions=[.9, .1],
+    Fractions=[.5, .5],
     datasetnames=['ECAL', 'HCAL'],
     Particles=[],
     MaxFiles=-1,
