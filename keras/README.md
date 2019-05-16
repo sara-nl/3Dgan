@@ -8,7 +8,7 @@ module load gcc
 wget https://surfdrive.surf.nl/files/index.php/s/hm6EAx3j39H5FFh
 
 virtualenv cp27_gcc71_impi17
-source /work/04653/damianp/stampede2/cern_1.3/cp27_gcc71_impi17/bin/activate
+source cp27_gcc71_impi17/bin/activate
 
 pip install tensorflow-1.13.1-cp27-cp27mu-linux_x86_64.whl --ignore-installed --no-cache
 pip install horovod --no-cache
@@ -28,6 +28,6 @@ The shell script is configured for a system with 24C/socket or 48 Cores/Node and
 
 ```Inter_op * OMP_NUM_THREADS <= Physical Cores/Worker```
 
-So, for a 48 Cores/Node and 4 Workers/Node we have 12 ```Phyical_Cores/Worker```.
+So, for a 48 cores node and 4 ```Workers/Node``` we have 12 ```Phyical_Cores/Worker```.
 
-If ```inter_op``` is 2 then ```OMP_NUM_THREADS``` is ```Phyical_Cores/Worker``` divided by inter_op, therefore ```12/2 = 6```. In this case ```intra_op``` is ```48/4 = 12```
+If ```inter_op``` is 2 then ```OMP_NUM_THREADS``` is ```Phyical_Cores/Worker``` divided by ```inter_op```, therefore ```12/2 = 6```. In this case ```intra_op``` is ```48/4 = 12```.
