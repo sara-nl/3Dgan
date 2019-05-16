@@ -44,7 +44,7 @@ def BitFlip(x, prob=0.05):
     x[selection] = 1 * np.logical_not(x[selection])
     return x
 
-def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.9,.1],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
+def DivideFiles(FileSearch="/data/LCD/*/*.h5", nEvents=200000, EventsperFile = 10000, Fractions=[.5,.5],datasetnames=["ECAL","HCAL"],Particles=[],MaxFiles=-1):
     
     Files =sorted( glob.glob(FileSearch))
     Filesused = int(math.ceil(nEvents/EventsperFile))
@@ -351,7 +351,7 @@ if __name__ == '__main__':
     from keras.models import Model
     from keras.optimizers import Adadelta, Adam, RMSprop
     from keras.utils.generic_utils import Progbar
-    from sklearn.cross_validation import train_test_split
+    from sklearn.model_selection import train_test_split
 
     import tensorflow as tf
     import horovod.keras as hvd
