@@ -28,6 +28,6 @@ The shell script is configured for a system with 24C/socket or 48 Cores/Node and
 
 ```Inter_op * OMP_NUM_THREADS <= Physical Cores/Worker```
 
-So, for a 48 Cores/Node and 4 Workers/Node we have 12 ```Phyical_Cores/Worker```.
+So, for a 48 cores node and 4 ```Workers/Node``` we have 12 ```Phyical_Cores/Worker```.
 
-If ```inter_op``` is 2 then ```OMP_NUM_THREADS``` is ```Phyical_Cores/Worker``` divided by inter_op, therefore ```12/2 = 6```. In this case ```intra_op``` is ```48/4 = 12```
+If ```inter_op``` is 2 then ```OMP_NUM_THREADS``` is ```Phyical_Cores/Worker``` divided by ```inter_op```, therefore ```12/2 = 6```. In this case ```intra_op``` is ```48/4 = 12```.
