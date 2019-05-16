@@ -368,7 +368,7 @@ if __name__ == '__main__':
     os.environ['KMP_SETTINGS'] = str(1)
     os.environ['KMP_AFFINITY'] = 'granularity=fine,compact'
     # os.environ['KMP_AFFINITY'] = 'balanced'
-    os.environ['OMP_NUM_THREADS'] = str(params.intraop)
+    # os.environ['OMP_NUM_THREADS'] = str(params.intraop)
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(3)
     K.set_session(tf.Session(config=config))
    
