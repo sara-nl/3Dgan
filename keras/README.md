@@ -29,9 +29,9 @@ There is a job script for Cartesius [```init_env_cartesius```](init_env_cartesiu
 ## Usage
 The order should be:
 1. ```module load``` ...
-2. ```source virtualenv_folder``` ...
+2. ```source virtualenv_folder/bin/activate```
 
-like in the ```job_*.sh``` job submission files. This sets the correct paths, otherwise Python packages are used.
+like in the ```job_*.sh``` job submission files. This sets the correct paths, otherwise Python packages outside the virtual environment are used.
 
 # Run the Keras code
 The script [```job_stampede_4w_1n_16bs.sh```](job_stampede_4w_1n_16bs.sh) will launch a one node run with four workers.
