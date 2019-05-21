@@ -1,4 +1,5 @@
 # Installation
+## Stampede2
 In order to replicate the run environment on Stampede2 you should run the ```init_env_stampede2.sh``` script:
 
 ```
@@ -20,9 +21,23 @@ else
 fi
 ```
 
-This will load the environment, install the Python packages needed and activate the virtual environment
+This will load the environment, install the Python packages needed and activate the virtual environment.
 
-# Run
+## Cartesius
+There is a job script for Cartesius [```init_env_cartesius```](init_env_cartesius.sh). Estimated ```RunTime=00:05:19```
+
+
+## Usage
+You can just source the activate script of the virtualenv if you want to run the script.
+
+If you want to install more packages, make sure you have the same compiler/mpi loaded, usually it's the easiest to just load the same modules as when deploying. 
+
+The order should be:
+1. ```module load``` ...
+2. ```source virtualenv_folder``` ...
+like in the ```job_*.sh``` job submission files. This sets the correct paths, otherwise Python packages are used.
+
+# Run the Keras code
 The script [```job_stampede_4w_1n_16bs.sh```](job_stampede_4w_1n_16bs.sh) will launch a one node run with four workers.
 The shell script is configured for a system with 24C/socket or 48 Cores/Node and 4 workers/node. Our recommendation is that the following equation hold true:
 
