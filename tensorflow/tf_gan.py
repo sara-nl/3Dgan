@@ -142,7 +142,7 @@ def GetData(
 
 
 (Trainfiles, Testfiles) = DivideFiles(
-    '/mnt/nfshead/ahhesam/data/*.h5',
+    '/scratch/shared/damian/CERN/EleScan/*.h5',
     nEvents=200000,
     EventsperFile=10000,
     datasetnames=['ECAL'],

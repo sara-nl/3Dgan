@@ -17,7 +17,7 @@ python EcalEnergyTrain_hvd.py \
 		--datapath=/scratch/eos/project/d/dshep/LCD/V1/*scan/*.h5 \
 		--weightsdir=$RUNDIR \
 		--batchsize 16 \
-		--lr 0.001 --optimizer=Adam \
+		-lr 0.001 --optimizer=Adam \
 		--latentsize 200 \
 		--intraop 11 --interop 1 \
 		--warmup 0 --nbepochs 25 

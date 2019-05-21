@@ -181,7 +181,7 @@ def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, da
         callbacks=[ \
         hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
         hvd.callbacks.MetricAverageCallback(), \
-        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
         hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
         keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
         ])
@@ -190,7 +190,7 @@ def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, da
         callbacks=[ \
         hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
         hvd.callbacks.MetricAverageCallback(), \
-        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
         hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
         keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
         ])
@@ -199,7 +199,7 @@ def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, da
         callbacks=[ \
         hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
         hvd.callbacks.MetricAverageCallback(), \
-        # hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
         hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
         keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
         ])
@@ -323,8 +323,8 @@ def get_parser():
     parser = argparse.ArgumentParser(description='3D GAN Params' )
     parser.add_argument('--model', '-m', action='store', type=str, default='EcalEnergyGan', help='Model architecture to use.')
     parser.add_argument('--nbepochs', action='store', type=int, default=25, help='Number of epochs to train for.')
-    parser.add_argument('--batchsize', action='store', type=int, default=126, help='batch size per update')
-    parser.add_argument('--latentsize', action='store', type=int, default=128, help='size of random N(0, 1) latent space to sample')
+    parser.add_argument('--batchsize', action='store', type=int, default=8, help='batch size per update')
+    parser.add_argument('--latentsize', action='store', type=int, default=200, help='size of random N(0, 1) latent space to sample')
     parser.add_argument('--datapath', action='store', type=str, default='/eos/project/d/dshep/LCD/V1/*scan/*.h5', help='HDF5 files to train from.')
     parser.add_argument('--nbEvents', action='store', type=int, default=200000, help='Number of Data points to use')
     parser.add_argument('--nbperfile', action='store', type=int, default=10000, help='Number of events in a file.')

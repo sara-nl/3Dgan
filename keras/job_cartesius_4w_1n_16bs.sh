@@ -48,20 +48,21 @@ export OMP_NUM_THREADS=$OMP_NUM_THREADS
 export KMP_AFFINITY="granularity=fine,compact,1,0"
 
 mpirun -np ${TOTAL_WORKERS} \
- --map-by socket: \
  --map-by socket:pe=${INTRA_T} \
  --bind-to core \
  --report-bindings \
  --oversubscribe \
  -x LD_LIBRARY_PATH \
- -x HOROVOD_FUSION_THRESHOLD \
- -x HOROVOD_CYCLE_TIME \
  -x OMP_NUM_THREADS \
  -x KMP_AFFINITY \
  numactl -l python EcalEnergyTrain_hvd.py \
  --model EcalEnergyGan \
  --nbepochs 25 \
- --batchsize 16 \
+ --warmup 5 \
+ --batchsize 8 \
+ -lr 0.001 \
+ --latentsize 200 \
+ --optimizer=RMSprop \
  --datapath='/scratch/shared/damian/CERN/EleScan/*.h5' \
  --weightsdir='/scratch/shared/damian/CERN/3DGAN_4w_1n_bs16_sun' \
  --intraop ${INTRA_T} \
