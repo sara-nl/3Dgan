@@ -170,48 +170,6 @@ def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, da
         name='combined_model'
     )
     
-    combined.compile(
-        #optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
-        optimizer=opt,
-        loss=['binary_crossentropy', 'mean_absolute_percentage_error', 'mean_absolute_percentage_error'],
-        loss_weights=[gen_weight, aux_weight, ecal_weight]
-    )
-
-    gcb = CallbackList( \
-        callbacks=[ \
-        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
-        hvd.callbacks.MetricAverageCallback(), \
-        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
-        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
-        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
-        ])
-   
-    dcb = CallbackList( \
-        callbacks=[ \
-        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
-        hvd.callbacks.MetricAverageCallback(), \
-        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
-        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
-        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
-        ])
-
-    ccb = CallbackList( \
-        callbacks=[ \
-        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
-        hvd.callbacks.MetricAverageCallback(), \
-        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1), \
-        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
-        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
-        ])
-
-    gcb.set_model( generator )
-    dcb.set_model( discriminator )
-    ccb.set_model( combined )
-
-    gcb.on_train_begin()
-    dcb.on_train_begin()
-    ccb.on_train_begin()
-
     # Getting Data
     Trainfiles, Testfiles = DivideFiles(datapath, nEvents=nEvents, EventsperFile = EventsperFile, datasetnames=["ECAL"], Particles =["Ele"])
 
@@ -237,14 +195,58 @@ def GanTrain(discriminator, generator, opt, global_batch_size, warmup_epochs, da
             Y_train = np.concatenate((Y_train, Y_temp))
             ecal_train = np.concatenate((ecal_train, ecal_temp))
 
-    print("On hostname {0} - After init using {1} memory".format(socket.gethostname(), psutil.Process(os.getpid()).memory_info()[0]))
-
     nb_test = X_test.shape[0]
     assert X_train.shape[0] == EventsperFile * len(Trainfiles), "# Total events in training files"
     nb_train = X_train.shape[0]# Total events in training files
     total_batches = nb_train / global_batch_size
     if hvd.rank()==0:
         print('Total Training batches = {} with {} events'.format(total_batches, nb_train))
+    
+    combined.compile(
+        #optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
+        optimizer=opt,
+        loss=['binary_crossentropy', 'mean_absolute_percentage_error', 'mean_absolute_percentage_error'],
+        loss_weights=[gen_weight, aux_weight, ecal_weight]
+    )
+
+    gcb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1, steps_per_epoch=total_batches), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
+   
+    dcb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1, steps_per_epoch=total_batches), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
+
+    ccb = CallbackList( \
+        callbacks=[ \
+        hvd.callbacks.BroadcastGlobalVariablesCallback(0), \
+        hvd.callbacks.MetricAverageCallback(), \
+        hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=warmup_epochs, verbose=1, steps_per_epoch=total_batches), \
+        hvd.callbacks.LearningRateScheduleCallback(start_epoch=warmup_epochs, end_epoch=nb_epochs, multiplier=1.), \
+        keras.callbacks.ReduceLROnPlateau(patience=10, verbose=1) \
+        ])
+
+    gcb.set_model( generator )
+    dcb.set_model( discriminator )
+    ccb.set_model( combined )
+
+    gcb.on_train_begin()
+    dcb.on_train_begin()
+    ccb.on_train_begin()
+
+    print("On hostname {0} - After init using {1} memory".format(socket.gethostname(), psutil.Process(os.getpid()).memory_info()[0]))
+
+
 
     train_history = defaultdict(list)
     test_history = defaultdict(list)
