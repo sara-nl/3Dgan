@@ -24,17 +24,13 @@ fi
 This will load the environment, install the Python packages needed and activate the virtual environment.
 
 ## Cartesius
-There is a job script for Cartesius [```init_env_cartesius```](init_env_cartesius.sh). Estimated ```RunTime=00:05:19```
-
+There is a job script for Cartesius [```init_env_cartesius```](init_env_cartesius.sh). Estimated ```RunTime=00:05:19```.
 
 ## Usage
-You can just source the activate script of the virtualenv if you want to run the script.
-
-If you want to install more packages, make sure you have the same compiler/mpi loaded, usually it's the easiest to just load the same modules as when deploying. 
-
 The order should be:
 1. ```module load``` ...
 2. ```source virtualenv_folder``` ...
+
 like in the ```job_*.sh``` job submission files. This sets the correct paths, otherwise Python packages are used.
 
 # Run the Keras code
