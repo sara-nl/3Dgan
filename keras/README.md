@@ -24,7 +24,7 @@ fi
 This will load the environment, install the Python packages needed and activate the virtual environment.
 
 ## Cartesius
-There is a job script for Cartesius [```init_env_cartesius```](init_env_cartesius.sh). Estimated ```RunTime=00:05:19```.
+There is a job script for Cartesius [```init_env_cartesius```](../init_env_cartesius.sh). Estimated ```RunTime=00:05:19```.
 
 ## Usage
 The order should be:
